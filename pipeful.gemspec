@@ -9,6 +9,7 @@ Gem::Specification.new do |spec|
   spec.summary       = "Pipeful is a simple DSL for piping data through callable objects."
   spec.homepage      = "https://github.com/fps-vogel/pipeful"
   spec.license       = "MIT"
+  spec.required_ruby_version = Gem::Requirement.new(">= 2.7.0")
 
   spec.add_development_dependency "binding_of_caller", "~> 0.8"
   spec.add_development_dependency "minitest", "~> 5.13"
@@ -20,6 +21,6 @@ Gem::Specification.new do |spec|
   spec.metadata["source_code_uri"] = "https://github.com/fps-vogel/pipeful"
   spec.metadata["changelog_uri"] = "https://github.com/fps-vogel/pipeful/blob/master/CHANGELOG.md"
 
-  spec.files = ["lib/pipeful.rb"]
+  spec.files = ["lib/pipeful.rb", "README.md", "LICENSE.txt"]
   spec.require_paths = ["lib"]
 end

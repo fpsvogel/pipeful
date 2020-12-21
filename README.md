@@ -26,7 +26,7 @@ Or install it yourself as:
 
 ## Usage
 
-See `pipeful_test.rb` for examples.
+See [`pipeful_test.rb`](https://github.com/fps-vogel/pipeful/blob/master/test/pipeful_test.rb) for examples.
 
 For the story of how this gem came to be, see [Beginning Functional Programming with Ruby](https://fpsvogel.netlify.app/posts/2020-12-21-ruby-functional-programming.html).
 
