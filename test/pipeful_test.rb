@@ -17,9 +17,10 @@ class PipefulTest < Minitest::Test
         FNoReturn >>         # == 121
         GClassMethod >>      # == 121
         HWithBlock do |n1, n2|
-          +[n1, n2] >>       # == +[121, 5]; could also be n1 >> n2 >>
+          +[n1, n2] >>       # == +[121, 5]
             IConstant >>     # == +[121, 5]
-            JNotFunction     # == JNotFunction object containing [121, 5]
+            42 >>            # == +[121, 5, 42]
+            JNotFunction     # == JNotFunction object containing [121, 5, 42]
       end
     end
 
@@ -187,7 +188,7 @@ class PipefulTest < Minitest::Test
   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
   def test_basic
-    assert_equal [121, 5], Pipelines.basic.to_a
+    assert_equal [121, 5, 42], Pipelines.basic.to_a
   end
 
   def test_parenthetical_args

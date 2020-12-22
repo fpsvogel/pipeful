@@ -4,10 +4,15 @@ require "forwardable"
 # require "binding_of_caller"  # if you'll use eval mode
 
 module Pipeful
-  pipe_operator = :>>  # if you change this, be sure to alias previous methods (see below) and change pipe_overrides
-  pipe_overrides = [Object, Integer, Proc]
+  # -----------------------------------------------------------------
+  #     PIPE OPERATOR
+  # -----------------------------------------------------------------
 
-  # make proc composition still usable as proc_a + proc_b
+  # if you change the operator, be sure to alias previous methods (see below) and change pipe_overrides
+  pipe_operator = :>>
+  pipe_overrides = [Integer, Proc]
+
+  # make proc composition still usable
   class Object::Proc
     alias + >>
   end
@@ -17,14 +22,19 @@ module Pipeful
     alias rshift >>
   end
 
+  # -----------------------------------------------------------------
+  #     PIPE MODE
+  # -----------------------------------------------------------------
+
   @pipe_mode = :constants
+  @all_modes = %i[constants eval]
 
   def self.pipe_mode
     @pipe_mode
   end
 
   def self.pipe_mode=(mode)
-    raise ArgumentError unless %i[constants eval].include?(mode)
+    raise ArgumentError unless @all_modes.include?(mode)
     @pipe_mode = mode
   end
 
@@ -35,6 +45,10 @@ module Pipeful
     self.pipe_mode = :constants
     result
   end
+
+  # -----------------------------------------------------------------
+  #     OBJECT MONKEYPATCHING
+  # -----------------------------------------------------------------
 
   class Object::Object
     def pipe_target
@@ -86,19 +100,28 @@ module Pipeful
     end
   end
 
+  # -----------------------------------------------------------------
+  #     PIPE BUFFER
+  # -----------------------------------------------------------------
+
   class PipeBuffer
     extend Forwardable
     def_delegators :@array, :size, :slice, :to_a, :first
+
     def initialize(*els)
       @array = debuffer(els)
     end
+
     def to_s
       "+#{@array}"
     end
+
+    # used by Object#>> when returning a pipe buffer
     def unwrap?
       return first if size == 1
       self
     end
+
     def self.unwrap?(buffer)
       return buffer unless buffer.is_a?(PipeBuffer)
       buffer.unwrap?
@@ -106,6 +129,7 @@ module Pipeful
 
     private
 
+    # prevents nested pipe buffer (but checks only one level deep)
     def debuffer(arr)
       arr.map do |el|
         el.is_a?(PipeBuffer) ? [*el] : [el]
@@ -113,26 +137,30 @@ module Pipeful
     end
   end
 
-  # unary operator to convert array into PipeBuffer
+  # unary operator to convert an Array into a PipeBuffer
   class Object::Array
     def +@
       PipeBuffer.new(*self)
     end
   end
 
-  pipe_overrides.each do |pipe_class|
+  # -----------------------------------------------------------------
+  #     Object#>> THE PIPE MECHANISM
+  # -----------------------------------------------------------------
+
+  ([Object] + pipe_overrides).each do |pipe_class|
     pipe_class.define_method(pipe_operator) do |other, &block|
       funct = other.pipe_target
       arity = other.pipe_arity
-      if funct.nil?  # other is an object without .call
+      if funct.nil?               # other is an object without .call
         return PipeBuffer.new(self, other).unwrap?
-      elsif !(is_a? PipeBuffer)  # self is single value
-        if arity.zero?  # other won't pipe self in, so self and result must be buffered
+      elsif !(is_a? PipeBuffer)   # self is single value
+        if arity.zero?  # funct won't pipe self in, so self and result must be buffered
           return PipeBuffer.new(self, funct.call).unwrap?
-        else
+        else            # funct will take self as argument
           return funct.call(self)
         end
-      else # value(s) in pipe buffer
+      else                        # self is a pipe buffer
         if arity.between?(0, size)
           pop_args = slice(-arity, arity)
           leftover = slice(0, size - arity)
@@ -141,14 +169,18 @@ module Pipeful
           leftover = []
         end
         result = funct.call(*pop_args, &block)
-        if leftover.empty?
+        if leftover.empty?  # all pipe args were passed into funct
           return PipeBuffer.unwrap?(result)
-        else
+        else                # one or more args remain in the pipeline
           return PipeBuffer.new(*leftover, result).unwrap?
         end
       end
     end
   end
+
+  # -----------------------------------------------------------------
+  #     PARENTHETICAL ARGUMENTS TO FUNCTIONS VIA method_missing
+  # -----------------------------------------------------------------
 
   class Object::Module
     def module_parent
@@ -157,7 +189,6 @@ module Pipeful
   end
 
   # all classes/constants contained in parents up to (but not including) Object
-  # or up to (and including) the module specified through self.top_module=
   def all_pipe_constants
     self_class = methods.include?(:constants) ? self : self.class
     consts_hash = ->(parent) { parent.constants.map { |name| [name, parent.const_get(name)] }.to_h }
@@ -170,9 +201,9 @@ module Pipeful
     all_consts
   end
 
-  # allows blocks after bare class/constant name: x >> FunctA { ... }
-  # or (FRAGILE! see below) after local variable holding a callable object: x >> some_proc { ... }
-  def method_missing(m, *arguments, &block)
+  # allows parenthetical args and/or blocks after bare class/constant name: x >> SomeFunct(y) { ... }
+  # or (FRAGILE! see below) after local variable holding a callable object: x >> some_proc(y) { ... }
+  def method_missing(m, *missing_args, **missing_kwargs, &block)
     pipe_item = case Pipeful.pipe_mode
                 when :constants
                   all_pipe_constants[m]
@@ -183,26 +214,27 @@ module Pipeful
       super
     elsif pipe_item.is_a?(Class)
       Class.new(pipe_item) do
-        @piped_args = arguments
+        @piped_args = missing_args
+        @piped_kwargs = missing_kwargs
         @piped_block = block
         case pipe_type
         when :class_function_class
           def self.call(*args)
-            superclass.call(*args, *@piped_args, &@piped_block)
+            superclass.call(*args, *@piped_args, **@piped_kwargs, &@piped_block)
           end
           def self.pipe_arity
             superclass.method(:call).arity
           end
         when :function_class
           def self.call(*args)
-            superclass.new(*@piped_args).call(*args, &@piped_block)
+            superclass.new(*@piped_args, **@piped_kwargs).call(*args, &@piped_block)
           end
           def self.pipe_arity
             superclass.instance_method(:call).arity
           end
         when :object_class
           def self.call(*args)
-            superclass.new(*args, &@piped_block)
+            superclass.new(*args, *@piped_args, **@piped_kwargs, &@piped_block)
           end
           def self.pipe_arity
             superclass.instance_method(:initialize).arity
@@ -214,7 +246,7 @@ module Pipeful
         @piped_object = pipe_item
         @piped_block = block
         def self.call(*args)
-          @piped_object.call(*args, &@piped_block)
+          @piped_object.call(*args, *@piped_args, **@piped_kwargs, &@piped_block)
         end
         def self.pipe_arity
           @piped_object.arity
