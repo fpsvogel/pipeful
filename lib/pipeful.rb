@@ -226,21 +226,25 @@ module Pipeful
               superclass.call(*args, *@parenth_args, **@parenth_kwargs, &@block)
             end
             def self.pipe_arity
-              superclass.method(:call).arity_range(subtract: parenth_arity)
+              superclass.method(:call)
+                        .arity_range(subtract: parenth_arity)
             end
           when :instance_function
             def self.call(*args)
-              superclass.new(*@parenth_args, **@parenth_kwargs).call(*args, &@block)
+              superclass.new(*@parenth_args, **@parenth_kwargs)
+                        .call(*args, &@block)
             end
             def self.pipe_arity
-              superclass.instance_method(:call).arity_range(subtract: parenth_arity)
+              superclass.instance_method(:call)
+                        .arity_range
             end
           when :object_class
             def self.call(*args)
               superclass.new(*args, *@parenth_args, **@parenth_kwargs, &@block)
             end
             def self.pipe_arity
-              superclass.instance_method(:initialize).arity_range(subtract: parenth_arity)
+              superclass.instance_method(:initialize)
+                        .arity_range(subtract: parenth_arity)
             end
           end
         end
@@ -272,27 +276,27 @@ module Pipeful
     end
 
     # all classes/constants contained in parents up to (and including) top_level
-    def all_constants(top_level = Object::Object)
+    def all_constants(top_level = Object::Object, from_parents: true)
       self_class = methods.include?(:constants) ? self : self.class
       consts_hash = ->(parent) { parent.constants.map { |name| [name, parent.const_get(name)] }.to_h }
       all_consts = {}
       loop do
         all_consts.merge!(consts_hash.call(self_class))
-        break if self_class == top_level
+        break if self_class == top_level || !from_parents
         self_class = self_class.module_parent
       end
       all_consts
     end
 
-    def all_pipable_constants
-      all_constants.select do |_name, const|
+    def all_pipable_constants(from_parents: true)
+      all_constants(from_parents: from_parents).select do |_name, const|
         const.is_a?(Class) || const.methods.include?(:call)
       end
     end
   end
 
-  def self.add_function_methods(obj, mode)
-    obj.all_pipable_constants.each do |name, const|
+  def self.add_function_methods(obj, mode, from_parents: true)
+    obj.all_pipable_constants(from_parents: from_parents).each do |name, const|
       next if obj.methods.include?(name)
       method_type = { extended: :define_singleton_method,
                       included: :define_method }[mode]
@@ -312,11 +316,17 @@ module Pipeful
   end
 
   def self.extended(obj)
-    at_end(obj) { |o| add_function_methods(o, :extended) }
+    add_function_methods(obj, :extended)
+    at_end(obj) do |obj_closed|
+      add_function_methods(obj_closed, :extended, from_parents: false)
+    end
   end
 
   def self.included(obj)
-    at_end(obj) { |o| add_function_methods(o, :included) }
+    add_function_methods(obj, :included)
+    at_end(obj) do |obj_closed|
+      add_function_methods(obj_closed, :included, from_parents: false)
+    end
   end
 
   # -----------------------------------------------------------------
