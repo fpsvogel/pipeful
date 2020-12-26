@@ -18,7 +18,7 @@ module Pipeful
   end
 
   # -----------------------------------------------------------------
-  #     METHOD AND OBJECT MONKEYPATCHING
+  #     METHOD & OBJECT MONKEYPATCHING
   # -----------------------------------------------------------------
 
   with_arity = [Method, UnboundMethod, Proc]
@@ -179,153 +179,88 @@ module Pipeful
   end
 
   # -----------------------------------------------------------------
-  #     DEFINE METHODS FOR FUNCTIONS (to allow parenthetical args and blocks)
+  #     PARENTHETICAL ARGUMENTS TO FUNCTIONS VIA method_missing
   # -----------------------------------------------------------------
-
-  def self.function_method_proc(const = nil,
-                                eval_self: nil,
-                                orig_method_missing: nil)
-    proc do |*method_args, **method_kwargs, &method_block|
-      # if in eval mode and a previously defined method_missing has been overridden,
-      # it must be put back in place temporarily to avoid an infinite method_missing loop due to eval
-      if eval_self
-        method_m = method_args.shift.to_s
-        if orig_method_missing
-          eval_method_missing = method(:method_missing)
-          # orig_method_missing is added indirectly here because the bare method_m (without args)
-          # is tried in case it is a local variable. if that fails, it goes to this second version
-          # of method_missing, which is an intermediate stage where the args are added back in to
-          # a call to the original method_missing
-          eval_self.define_singleton_method(:method_missing) do |m, *_args, **_kwargs, &_block|
-            eval_self.define_singleton_method(:method_missing, orig_method_missing)
-            eval_self.send(:method_missing, m, *method_args, **method_kwargs, &method_block)
-          end
-        end
-        begin
-          funct = binding.of_caller(1).eval(method_m)
-        rescue NameError  # happens for constant- or class-style names like NonexistentFunct
-          funct = binding.of_caller(1).eval("#{method_m}()")
-        end
-        if orig_method_missing
-          eval_self.define_singleton_method(:method_missing, eval_method_missing)
-        end
-      else
-        funct = const
-      end
-      if funct.is_a?(Class)
-        Class.new(funct) do
-          @parenth_args = method_args
-          @parenth_kwargs = method_kwargs
-          @block = method_block
-          def self.parenth_arity
-            @parenth_args.count
-          end
-          case pipe_type
-          when :class_function
-            def self.call(*args)
-              superclass.call(*args, *@parenth_args, **@parenth_kwargs, &@block)
-            end
-            def self.pipe_arity
-              superclass.method(:call)
-                        .arity_range(subtract: parenth_arity)
-            end
-          when :instance_function
-            def self.call(*args)
-              superclass.new(*@parenth_args, **@parenth_kwargs)
-                        .call(*args, &@block)
-            end
-            def self.pipe_arity
-              superclass.instance_method(:call)
-                        .arity_range
-            end
-          when :object_class
-            def self.call(*args)
-              superclass.new(*args, *@parenth_args, **@parenth_kwargs, &@block)
-            end
-            def self.pipe_arity
-              superclass.instance_method(:initialize)
-                        .arity_range(subtract: parenth_arity)
-            end
-          end
-        end
-      elsif funct.methods.include?(:call)  # funct is a callable object (in a constant, unless in eval mode)
-        Class.new do
-          @funct_obj = funct
-          @parenth_args = method_args
-          @parenth_kwargs = method_kwargs
-          @block = method_block
-          def self.parenth_arity
-            @parenth_args.count
-          end
-          def self.call(*args)
-            @funct_obj.call(*args, *@parenth_args, **@parenth_kwargs, &@block)
-          end
-          def self.pipe_arity
-            @funct_obj.arity_range(subtract: parenth_arity)
-          end
-        end
-      else  # in eval mode, if funct resolves to a non-callable object
-        funct
-      end
-    end
-  end
 
   class ::Module
     def module_parent
       @module_parent ||= name =~ /::[^:]+\Z/ ? Object.const_get($`) : Object
     end
+  end
 
-    # all classes/constants contained in parents up to (and including) top_level
-    def all_constants(top_level = Object::Object, from_parents: true)
-      self_class = methods.include?(:constants) ? self : self.class
-      consts_hash = ->(parent) { parent.constants.map { |name| [name, parent.const_get(name)] }.to_h }
-      all_consts = {}
-      loop do
-        all_consts.merge!(consts_hash.call(self_class))
-        break if self_class == top_level || !from_parents
-        self_class = self_class.module_parent
+  # finds a class/constant by name contained in self or parents up to (and including) top_level
+  def find_constant(name, top_level: ::Object)
+    self_module = methods.include?(:constants) ? self : self.class
+    loop do
+      return self_module.const_get(name) if self_module.constants.include?(name)
+      return nil if self_module == top_level
+      self_module = self_module.module_parent
+    end
+  end
+
+  # allows parenthetical args and/or blocks after bare class/constant name: x >> SomeFunct(y) { ... }
+  # or (FRAGILE! see eval mode below) after callable object in local variable: x >> some_proc(y) { ... }
+  def method_missing(m, *method_args, **method_kwargs, &method_block)
+    pipe_next = if @pipe_eval_mode
+                  level = binding.of_caller(1).eval("__method__") == :method_missing ? 2 : 1
+                  binding.of_caller(level).eval(m.to_s)
+                else
+                  find_constant(m)
+                end
+    if pipe_next.nil?
+      super
+    elsif pipe_next.is_a?(Class)
+      Class.new(pipe_next) do
+        @parenth_args = method_args
+        @parenth_kwargs = method_kwargs
+        @block = method_block
+        def self.parenth_arity
+          @parenth_args.count
+        end
+        case pipe_type
+        when :class_function
+          def self.call(*args)
+            superclass.call(*args, *@parenth_args, **@parenth_kwargs, &@block)
+          end
+          def self.pipe_arity
+            superclass.method(:call)
+                      .arity_range(subtract: parenth_arity)
+          end
+        when :instance_function
+          def self.call(*args)
+            superclass.new(*@parenth_args, **@parenth_kwargs)
+                      .call(*args, &@block)
+          end
+          def self.pipe_arity
+            superclass.instance_method(:call)
+                      .arity_range
+          end
+        when :object_class
+          def self.call(*args)
+            superclass.new(*args, *@parenth_args, **@parenth_kwargs, &@block)
+          end
+          def self.pipe_arity
+            superclass.instance_method(:initialize)
+                      .arity_range(subtract: parenth_arity)
+          end
+        end
       end
-      all_consts
-    end
-
-    def all_pipable_constants(from_parents: true)
-      all_constants(from_parents: from_parents).select do |_name, const|
-        const.is_a?(Class) || const.methods.include?(:call)
+    else  # pipe_next is a callable object (in a constant, unless in eval mode)
+      Class.new do
+        @funct_obj = pipe_next
+        @parenth_args = method_args
+        @parenth_kwargs = method_kwargs
+        @block = method_block
+        def self.parenth_arity
+          @parenth_args.count
+        end
+        def self.call(*args)
+          @funct_obj.call(*args, *@parenth_args, **@parenth_kwargs, &@block)
+        end
+        def self.pipe_arity
+          @funct_obj.arity_range(subtract: parenth_arity)
+        end
       end
-    end
-  end
-
-  def self.add_function_methods(obj, mode, from_parents: true)
-    obj.all_pipable_constants(from_parents: from_parents).each do |name, const|
-      next if obj.methods.include?(name)
-      method_type = { extended: :define_singleton_method,
-                      included: :define_method }[mode]
-      method_proc = function_method_proc(const)
-      obj.send(method_type, name, method_proc)
-    end
-  end
-
-  def self.at_end(obj, &block)
-    # from https://stackoverflow.com/questions/32233860/how-can-i-set-a-hook-to-run-code-at-the-end-of-a-ruby-class-definition
-    TracePoint.trace(:end) do |t|
-      if obj == t.self
-        block.call(obj)
-        t.disable
-      end
-    end
-  end
-
-  def self.extended(obj)
-    add_function_methods(obj, :extended)
-    at_end(obj) do |obj_closed|
-      add_function_methods(obj_closed, :extended, from_parents: false)
-    end
-  end
-
-  def self.included(obj)
-    add_function_methods(obj, :included)
-    at_end(obj) do |obj_closed|
-      add_function_methods(obj_closed, :included, from_parents: false)
     end
   end
 
@@ -333,19 +268,11 @@ module Pipeful
   #     EVAL MODE
   # -----------------------------------------------------------------
 
-  # not recommended for production!
-  # relies on binding_of_caller gem, and metaprogramming sorcery
-  def pipe_eval(&pipeline)
-    orig_method_missing = method(:method_missing) if methods.include?(:method_missing)
-    eval_method_missing = Pipeful.function_method_proc(orig_method_missing: orig_method_missing,
-                                                       eval_self: self)
-    define_singleton_method(:method_missing, eval_method_missing)
-    result = pipeline.call
-    if orig_method_missing
-      define_singleton_method(:method_missing, orig_method_missing)
-    else
-      singleton_class.undef_method(:method_missing)
-    end
+  # not recommended for production! relies on binding_of_caller gem and iffy stack-climbing (above)
+  def pipe_eval(&block)
+    @pipe_eval_mode = true
+    result = block.call
+    @pipe_eval_mode = false
     result
   end
 

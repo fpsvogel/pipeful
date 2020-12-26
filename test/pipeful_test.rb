@@ -197,7 +197,11 @@ class PipefulTest < Minitest::Test
       end
 
       def self.method_missing(m, *args, **kwargs, &block)
-        args.first
+        if m.to_s.downcase.include?("nonexistent")
+          args.first
+        else
+          super
+        end
       end
     end
 
@@ -219,8 +223,12 @@ class PipefulTest < Minitest::Test
         end
       end
 
-      def self.method_missing(_m, *args, **_kwargs, &_block)
-        args.first
+      def self.method_missing(m, *args, **kwargs, &block)
+        if m.to_s.downcase.include?("nonexistent")
+          args.first
+        else
+          super
+        end
       end
     end
 
@@ -240,14 +248,18 @@ class PipefulTest < Minitest::Test
           3 >>
             multiply_by(4) >>
             NonexistentFunct(100) >>
-            doesnt_exist_either(50) >>
+            also_nonexistent(50) >>
             multiply_by(4) >>
             Array
         end
       end
 
-      def self.method_missing(_m, *args, **_kwargs, &_block)
-        args.first
+      def self.method_missing(m, *args, **kwargs, &block)
+        if m.to_s.downcase.include?("nonexistent")
+          args.first
+        else
+          super
+        end
       end
     end
 
@@ -263,7 +275,7 @@ class PipefulTest < Minitest::Test
       def call(n)
         n >>
           InsideEvalParenth(3, operator: :+) >>
-          DoesntExist(300)
+          Nonexistent(300)
       end
 
       class InsideEvalParenth
@@ -272,8 +284,12 @@ class PipefulTest < Minitest::Test
         end
       end
 
-      def method_missing(_m, *args, **_kwargs, &_block)
-        args.first
+      def method_missing(m, *args, **kwargs, &block)
+        if m.to_s.downcase.include?("nonexistent")
+          args.first
+        else
+          super
+        end
       end
     end
   end

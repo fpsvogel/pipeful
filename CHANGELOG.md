@@ -1,8 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/fps-vogel/pipeful/releases/tag/0.2.1)
+
+- Reverted to the previous `method_missing` approach (simpler and more flexible) while ensuring that custom `method_missing`s still work in the new test cases.
+
 ## [0.2.0](https://github.com/fps-vogel/pipeful/releases/tag/0.2.0)
 
-- `method_missing` can now be used along with piping. See [Issue #1](https://github.com/fps-vogel/pipeful/issues/1).
+- Not using `method_missing` anymore. See [Issue #1](https://github.com/fps-vogel/pipeful/issues/1).
 - Bug fixed where functions called with parenthetical arguments caused an `ArgumentError` if the number of items in the pipeline exceeded the arity of the function, because the function took all of them as arguments.
 
 ## [0.1.2](https://github.com/fps-vogel/pipeful/releases/tag/0.1.2)
