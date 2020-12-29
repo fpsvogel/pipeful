@@ -1,12 +1,25 @@
 # frozen_string_literal: true
 
 require "forwardable"
-# require "binding_of_caller"  # if you'll use eval mode
+# require "binding_of_caller"  # if you'll use local mode
 
 module Pipeful
   # -----------------------------------------------------------------
   #     PIPE OPERATOR
   # -----------------------------------------------------------------
+
+  # MONKEY PATCH WARNING: Be aware that a class/module that inherits a Pipeful class/
+  # module will also be Pipeful. That is, the pipe operator will still be a pipe
+  # operator, and the unary "+" operator will still turn an Array into a PipeBuffer.
+  # See PIPE BUFFER and PIPE METHOD below.
+
+  # THE REASON: I like refinements and per-object extensions, but I don't see how
+  # refinements can be used for all Pipeful features, so that we can add just "using
+  # Pipeful" to the top of a class/module. This is because some features rely on
+  # method_missing (and therefore inheritance). We could turn all features except
+  # method_missing into refinements, but then we would need to add "using Pipeful"
+  # AND "extend/include Pipeful", which is cumbersome. So I'm trading the risks of
+  # monkey patching for the convenience of just extending/including Pipeful.
 
   # if you change the operator, be sure to change the override classes and aliases as well
   pipe_operator = :>>
@@ -18,14 +31,14 @@ module Pipeful
   end
 
   # -----------------------------------------------------------------
-  #     METHOD & OBJECT MONKEYPATCHING
+  #     PIPE HELPER METHODS
   # -----------------------------------------------------------------
 
-  with_arity = [Method, UnboundMethod, Proc]
-
-  class ::Method
-    def self.arity_range(method, subtract: 0)
-      parameters = method.parameters
+  # an extension rather than a refinement so that it can be patched in
+  # on a per-object basis rather than having to specify every class
+  # that needs it (Method, UnboundMethod, and Proc at least)
+  module ArityRange
+    def arity_range(subtract: 0)
       min_arity = parameters.select { |type, _name| type == :req }
                             .count - subtract
       if parameters.assoc(:rest)
@@ -39,62 +52,58 @@ module Pipeful
     end
   end
 
-  with_arity.each do |methodlike|
-    methodlike.define_method(:arity_range) do |subtract: 0|
-      Method.arity_range(self, subtract: subtract)
+  module PipableObject
+    refine Object do
+      def pipe_target
+        case pipe_type
+        when :instance_function
+          ->(*args, &block) { new.call(*args, &block) }
+        when :function_object, :class_function
+          ->(*args, &block) { call(*args, &block) }
+        when :object_class
+          ->(*args, &block) { new(*args, &block) }
+        when :object
+          nil
+        end
+      end
+
+      def pipe_arity
+        case pipe_type
+        when :instance_function
+          method = instance_method(:call)
+        when :function_object, :class_function
+          if is_a?(Proc)
+            method = self
+          else
+            method = method(:call)
+          end
+        when :object_class
+          method = instance_method(:initialize)
+        when :object
+          return 0..0
+        end
+        method.extend(ArityRange).arity_range
+      end
+
+      def pipe_type
+        if methods.include?(:instance_methods)
+          if methods.include?(:call)
+            :class_function
+          elsif instance_methods.include?(:call)
+            :instance_function
+          else
+            :object_class
+          end
+        elsif methods.include?(:call)
+          :function_object
+        else
+          :object
+        end
+      end
     end
   end
 
-  class ::Object
-    def pipe_target
-      case pipe_type
-      when :instance_function
-        ->(*args, &block) { new.call(*args, &block) }
-      when :function_object, :class_function
-        ->(*args, &block) { call(*args, &block) }
-      when :object_class
-        ->(*args, &block) { new(*args, &block) }
-      when :object
-        nil
-      end
-    end
-
-    def pipe_arity
-      case pipe_type
-      when :instance_function
-        method = instance_method(:call)
-      when :function_object, :class_function
-        if is_a?(Proc)
-          method = self
-        else
-          method = method(:call)
-        end
-      when :object_class
-        method = instance_method(:initialize)
-      when :object
-        return 0..0
-      end
-      method.arity_range
-    end
-
-    protected
-
-    def pipe_type
-      if methods.include?(:instance_methods)
-        if methods.include?(:call)
-          :class_function
-        elsif instance_methods.include?(:call)
-          :instance_function
-        else
-          :object_class
-        end
-      elsif methods.include?(:call)
-        :function_object
-      else
-        :object
-      end
-    end
-  end
+  using PipableObject
 
   # -----------------------------------------------------------------
   #     PIPE BUFFER
@@ -139,13 +148,14 @@ module Pipeful
       PipeBuffer.new(*self)
     end
 
+    # convenience to convert piped args: ... >> Array
     def self.call(*args)
       args
     end
   end
 
   # -----------------------------------------------------------------
-  #     Object#>> (THE PIPE METHOD)
+  #     PIPE METHOD
   # -----------------------------------------------------------------
 
   ([Object] + operator_overrides_aliases.keys).each do |pipe_class|
@@ -182,30 +192,33 @@ module Pipeful
   #     PARENTHETICAL ARGUMENTS TO FUNCTIONS VIA method_missing
   # -----------------------------------------------------------------
 
-  class ::Module
-    def module_parent
-      @module_parent ||= name =~ /::[^:]+\Z/ ? Object.const_get($`) : Object
+  module FindConstant
+    refine Module do
+      def module_parent
+        @module_parent ||= name =~ /::[^:]+\Z/ ? Object.const_get($`) : Object
+      end
+
+      # finds a class/constant by name contained in self or parents up to (and including) top_level
+      def find_constant(name, top_level: ::Object)
+        return const_get(name) if constants.include?(name)
+        return nil if self == top_level
+        module_parent.find_constant(name, top_level: top_level)
+      end
     end
   end
 
-  # finds a class/constant by name contained in self or parents up to (and including) top_level
-  def find_constant(name, top_level: ::Object)
-    self_module = methods.include?(:constants) ? self : self.class
-    loop do
-      return self_module.const_get(name) if self_module.constants.include?(name)
-      return nil if self_module == top_level
-      self_module = self_module.module_parent
-    end
-  end
+  using FindConstant
 
   # allows parenthetical args and/or blocks after bare class/constant name: x >> SomeFunct(y) { ... }
-  # or (FRAGILE! see eval mode below) after callable object in local variable: x >> some_proc(y) { ... }
+  # or (FRAGILE! see local mode below) after callable object in local variable: x >> some_proc(y) { ... }
   def method_missing(m, *method_args, **method_kwargs, &method_block)
-    pipe_next = if @pipe_eval_mode
-                  level = binding.of_caller(1).eval("__method__") == :method_missing ? 2 : 1
+    pipe_next = if @pipe_local_mode
+                  level = 1
+                  level += 1 while binding.of_caller(level).eval("__method__") == :method_missing
                   binding.of_caller(level).eval(m.to_s)
                 else
-                  find_constant(m)
+                  self_module = methods.include?(:constants) ? self : self.class
+                  self_module.find_constant(m)
                 end
     if pipe_next.nil?
       super
@@ -224,6 +237,7 @@ module Pipeful
           end
           def self.pipe_arity
             superclass.method(:call)
+                      .extend(ArityRange)
                       .arity_range(subtract: parenth_arity)
           end
         when :instance_function
@@ -233,6 +247,7 @@ module Pipeful
           end
           def self.pipe_arity
             superclass.instance_method(:call)
+                      .extend(ArityRange)
                       .arity_range
           end
         when :object_class
@@ -241,11 +256,12 @@ module Pipeful
           end
           def self.pipe_arity
             superclass.instance_method(:initialize)
+                      .extend(ArityRange)
                       .arity_range(subtract: parenth_arity)
           end
         end
       end
-    else  # pipe_next is a callable object (in a constant, unless in eval mode)
+    else  # pipe_next is a callable object (in a constant, unless in local mode)
       Class.new do
         @funct_obj = pipe_next
         @parenth_args = method_args
@@ -258,21 +274,22 @@ module Pipeful
           @funct_obj.call(*args, *@parenth_args, **@parenth_kwargs, &@block)
         end
         def self.pipe_arity
-          @funct_obj.arity_range(subtract: parenth_arity)
+          @funct_obj.extend(ArityRange)
+                    .arity_range(subtract: parenth_arity)
         end
       end
     end
   end
 
   # -----------------------------------------------------------------
-  #     EVAL MODE
+  #     LOCAL MODE
   # -----------------------------------------------------------------
 
-  # not recommended for production! relies on binding_of_caller gem and iffy stack-climbing (above)
-  def pipe_eval(&block)
-    @pipe_eval_mode = true
+  # not recommended for production! relies on binding_of_caller gem, and iffy stack-climbing (above)
+  def pipe_local(&block)
+    @pipe_local_mode = true
     result = block.call
-    @pipe_eval_mode = false
+    @pipe_local_mode = false
     result
   end
 

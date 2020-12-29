@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.2](https://github.com/fps-vogel/pipeful/releases/tag/0.2.2)
+
+- Fixed a bug where multiple mixins broke eval mode.
+- Replaced internal monkey patches with extensions and refinements.
+
 ## [0.2.1](https://github.com/fps-vogel/pipeful/releases/tag/0.2.1)
 
 - Reverted to the previous `method_missing` approach (simpler and more flexible) while ensuring that custom `method_missing`s still work in the new test cases.
