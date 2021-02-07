@@ -18,6 +18,7 @@ class PipeFeaturesTest < Minitest::Test
     extend Pipeful
 
     def self.result
+      funct_object = ->(*args) { +[*args] }
       100 >>
         ASimple >>           # == 110
         BNested >>           # == 121
@@ -30,6 +31,7 @@ class PipeFeaturesTest < Minitest::Test
           +[n1, n2] >>       # == +[121, 5]
             I_CONSTANT >>    # == +[121, 5]
             42 >>            # == +[121, 5, 42]
+            funct_object >>  # == +[121, 5, 42]
             JNotFunction     # == JNotFunction object containing [121, 5, 42]
         end
     end
@@ -119,6 +121,32 @@ end
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
+class PipeIntoArrayTest < Minitest::Test
+  include Pipeful
+
+  def test_pipe_into_empty_callable_array
+    assert_equal [11, 12], result_empty
+  end
+
+  def test_pipe_into_existing_array_made_callable
+    assert_equal [13, 14, 15], result_existing
+  end
+
+  private
+
+  def result_empty
+    callable_array = Pipeful.array
+    11 >> 12 >> callable_array
+  end
+
+  def result_existing
+    callable_array = Pipeful.array([13, 14])
+    15 >> callable_array
+  end
+end
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
 class ClassFunct
   def self.call(x, y, operator: :-)
     x.send(operator, y)
@@ -203,20 +231,20 @@ end
 class LocalModeTest < Minitest::Test
   include Pipeful
 
-  def test_local_mode
+  def test_local_mode_routes_arguments_for_local_functions
     assert_equal 11, result
   end
 
   private
 
   def result
-    funct_local = ->(n, mult:) { n * mult }
-    @funct_instance = -> (n) { n + 1 }
+    local_funct = ->(n, mult:) { n * mult }
+    @instance_funct = -> (n) { n + 1 }
 
     pipe_local do
       5 >>
-        funct_local(mult: 2) >>
-        @funct_instance
+        local_funct(mult: 2) >>
+        @instance_funct
     end
   end
 end
@@ -227,17 +255,18 @@ class MethodMissingTest < Minitest::Test
   include Pipeful
 
   def test_method_missing_in_instance
+    result = instance_result
     assert_equal [12, 1, 2], result
   end
 
-    def test_method_missing_in_class_method
+  def test_method_missing_in_class_method
     result = ClassFunctionMethodMissing.result
     assert_equal [12, 1, 2], result
   end
 
   private
 
-  def result
+  def instance_result
     +[3, 4] >>
       ClassFunct(operator: :*) >>
       NonexistentFunct(1) >>

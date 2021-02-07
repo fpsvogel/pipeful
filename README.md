@@ -10,9 +10,9 @@ extend Pipeful
 
 ## Usage
 
-See [`pipeful_test.rb`](https://github.com/fps-vogel/pipeful/blob/master/test/pipeful_test.rb) for examples.
+See [`pipeful_test.rb`](https://github.com/fpsvogel/pipeful/blob/master/test/pipeful_test.rb) for examples.
 
-For the story of how this gem came to be, see [Beginning Functional Programming with Ruby](https://fpsvogel.netlify.app/posts/2020-12-21-ruby-functional-programming.html).
+For the story of how this gem came to be, see [Functional programming techniques in Ruby](https://fpsvogel.netlify.app/posts/2020-12-21-ruby-functional-programming.html).
 
 ## Installation
 
@@ -32,7 +32,7 @@ Or install it yourself as:
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/fps-vogel/pipeful.
+Bug reports and pull requests are welcome on GitHub at https://github.com/fpsvogel/pipeful.
 
 ## License
 

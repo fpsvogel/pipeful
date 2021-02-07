@@ -7,7 +7,7 @@ Gem::Specification.new do |spec|
   spec.email         = ["fps.vogel@gmail.com"]
 
   spec.summary       = "Pipeful is a simple DSL for piping data through callable objects."
-  spec.homepage      = "https://github.com/fps-vogel/pipeful"
+  spec.homepage      = "https://github.com/fpsvogel/pipeful"
   spec.license       = "MIT"
   spec.required_ruby_version = Gem::Requirement.new(">= 2.7.0")
 
@@ -18,8 +18,8 @@ Gem::Specification.new do |spec|
   spec.metadata["allowed_push_host"] = "https://rubygems.org"
 
   spec.metadata["homepage_uri"] = spec.homepage
-  spec.metadata["source_code_uri"] = "https://github.com/fps-vogel/pipeful"
-  spec.metadata["changelog_uri"] = "https://github.com/fps-vogel/pipeful/blob/master/CHANGELOG.md"
+  spec.metadata["source_code_uri"] = "https://github.com/fpsvogel/pipeful"
+  spec.metadata["changelog_uri"] = "https://github.com/fpsvogel/pipeful/blob/master/CHANGELOG.md"
 
   spec.files = ["lib/pipeful.rb", "README.md", "LICENSE.txt"]
   spec.require_paths = ["lib"]

@@ -31,6 +31,19 @@ module Pipeful
   end
 
   # -----------------------------------------------------------------
+  #     UTILITY METHODS
+  # -----------------------------------------------------------------
+
+  # makes the given array callable, appending the piped object(s)
+  def self.array(arr = [])
+    def arr.call(*els)
+      els.each { |el| self << el }
+      self
+    end
+    arr
+  end
+
+  # -----------------------------------------------------------------
   #     PIPE HELPER METHODS
   # -----------------------------------------------------------------
 
