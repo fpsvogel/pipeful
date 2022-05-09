@@ -16,19 +16,17 @@ For the story of how this gem came to be, see [Functional programming techniques
 
 ## Installation
 
-Add this line to your application's Gemfile:
+_UPDATE, a year later: I have removed this gem from RubyGems. I've changed my mind and I no longer think this syntax is helpful. In fact, it can easily become a source of confusion and bugs. So I'm no longer maintaining this gem._
+
+Still, if you want to use the gem, you can add this line to your application's Gemfile:
 
 ```ruby
-gem "pipeful"
+gem "pipeful", :git => "git://github.com/fpsvogel/pipeful.git"
 ```
 
 And then execute:
 
     $ bundle install
-
-Or install it yourself as:
-
-    $ gem install pipeful
 
 ## Contributing
 
