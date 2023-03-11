@@ -1,3 +1,7 @@
+_UPDATE, March 2023: Here's an approach that is far simpler and less hacky, and achieves nearly the same thing: https://www.gregnavis.com/articles/elixir-style-pipelines-in-9-lines-of-ruby.html_
+
+_UPDATE, May 2022: I have removed this gem from RubyGems. I've changed my mind and I no longer think this syntax is helpful. In fact, it can easily become a source of confusion and bugs. So I'm no longer maintaining this gem._
+
 # Pipeful
 
 Pipeful makes it easy to pipe data through functions (callable objects). Just write the function classes and then chain them with the `>>` operator:
@@ -15,8 +19,6 @@ See [`pipeful_test.rb`](https://github.com/fpsvogel/pipeful/blob/master/test/pip
 For the story of how this gem came to be, see [Functional programming techniques in Ruby](https://fpsvogel.netlify.app/posts/2020-12-21-ruby-functional-programming.html).
 
 ## Installation
-
-_UPDATE, a year later: I have removed this gem from RubyGems. I've changed my mind and I no longer think this syntax is helpful. In fact, it can easily become a source of confusion and bugs. So I'm no longer maintaining this gem._
 
 Still, if you want to use the gem, you can add this line to your application's Gemfile:
 
